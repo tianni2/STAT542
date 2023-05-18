@@ -1,0 +1,163 @@
+---
+title: "Assignment_3_6659_tianni2"
+author: "Tian Ni"
+date: "10/9/2021"
+output: html_document
+---
+
+```{r}
+library(splines)
+library(sm)
+```
+
+
+Part I.
+--
+
+Prepare the function.
+--
+```{r}
+# First construct the function to compute the diagonal entries
+# of the smoother matrix
+lo.lev=function(x1,sp){
+  # x1: n-by-1 feature vector
+  # sp: a numerical value for "span"
+  n=length(x1)
+  lev=rep(0,n)
+  for(i in 1:n){
+    y=rep(0,n)
+    y[i]=1
+    lev[i]=predict(loess(y~x1,span = sp,control = loess.control(surface = "direct")))[i]
+  }
+  return(lev)
+}
+
+
+onestep_CV=function(x1,y1,sp){
+  loess.fit=loess(y1~x1,span=sp,control = loess.control(surface = "direct"))
+  resid.vec=loess.fit$residual
+  # get the diagonal entries of the smoother matrix
+  s=lo.lev(x1,sp)
+  pred_y=predict(loess.fit)
+  # residual = y1- pred_y
+  # both of them would work well
+  cv=mean((resid(loess.fit)/(1-s))^2)
+  gcv=sum(((y1-pred_y)/(1-mean(s)))^2)/length(y1)
+  
+  return(list(cv=cv,gcv=gcv))
+}
+
+myCV=function(x1,y1,span){
+  m=length(span)
+  cv=rep(0,m)
+  gcv=rep(0,m)
+  
+  for(i in 1:m){
+    tmp=onestep_CV(x1,y1,span[i])
+    cv[i]=tmp$cv
+    gcv[i]=tmp$gcv
+  }
+  return(list(cv=cv,gcv=gcv))
+}
+```
+
+
+
+
+Test my function with data "Coding3_Data.csv"
+--
+```{r}
+mydata=read.csv("Coding3_Data.csv")
+plot(mydata$x,mydata$y,xlab="",ylab="")
+
+span1=seq(from=0.2,to=0.9,by=0.05)
+cv.out=myCV(mydata$x,mydata$y,span1)
+
+#Print my results on LOO-CV and GCV
+myout=data.frame(CV=cv.out$cv,GCV=cv.out$gcv,span=span1)
+myout
+
+myout$span[which.min(myout$CV)]
+myout$span[which.min(myout$GCV)]
+# both of cv and gcv achieve their minimal at 0.5
+```
+
+
+Plot the fitted curve.
+--
+Plot the data(red circles), the true curve(gray) and the fitted curve(blue dashed line) using the optimal span.
+
+```{r}
+span.min=0.5
+plot(mydata$x,mydata$y,xlab="",ylab="",col="gray")
+fx=1:50/50
+fy=sin(12*(fx+0.2))/(fx+0.2)
+lines(fx,fy,col=8,lwd=2)
+
+f=loess(y~x,mydata,span = span.min)
+lines(fx, predict(f,data.frame(x=fx),surface="direct"),lty=2,lwd=2,col="blue")
+```
+
+Part II.
+--
+
+```{r}
+set.seed(6659)
+# first read the data into the workspace
+data2=read.csv("Sales_Transactions_Dataset_Weekly.csv",header = TRUE)
+# check the dimension of the data
+dim(data2)
+# only use the original data 
+ts=as.matrix(data2[,2:53])
+
+row.names(ts)=data2[,1]
+ts=ts-rowMeans(ts)
+# create the one-dimensional feature which is the index from 1 to 52
+index=seq(1,52,by=1)
+# calculate the basis 
+basis=ns(index,df=9)
+# remove the column mean from F 
+F=t(t(basis)-colMeans(basis))
+# Calculated the corresponding coefficients
+B=t(solve(t(F) %*% F) %*% t(F) %*% t(ts))
+# Check the dimension of our coefficients matrix
+dim(B)
+```
+
+Run k-means algorithm on B to cluster the 811 products into 6 clusters.
+--
+```{r}
+mykm1=kmeans(B,centers = 6,nstart = 20)
+myK=6
+par(mfrow=c(2:3))
+mycenters1=F %*% t(mykm1$centers)
+for(k in 1:myK){
+  id=which(mykm1$cluster==k)
+  plot(NA,xlim=c(1,ncol(ts)),ylim=range(ts),xlab="Weeks",ylab="Weekly Sales")
+  for(i in 1:length(id))
+    lines(1:ncol(ts),ts[id[i],],col="gray")
+  lines(1:ncol(ts),mycenters1[,k],col="red")
+  
+}
+
+```
+
+
+Run k-means algorithm on X to cluster the 811 products into 6 clusters.
+--
+```{r}
+
+mykm2=kmeans(ts,centers = 6,nstart = 20)
+myK=6
+par(mfrow=c(2:3))
+mycenters2= t(mykm2$centers)
+for(k in 1:myK){
+  id=which(mykm2$cluster==k)
+  plot(NA,xlim=c(1,ncol(ts)),ylim=range(ts),xlab="Weeks",ylab="Weekly Sales")
+  for(i in 1:length(id))
+    lines(1:ncol(ts),ts[id[i],],col="gray")
+  lines(1:ncol(ts),mycenters2[,k],col="red")
+  
+}
+
+```
