@@ -1,0 +1,14 @@
+---
+title: "Project_IV_Shiny"
+author: "Tian Ni"
+date: "12/6/2021"
+output: html_document
+---
+
+```{r}
+install.packages("devtools")
+devtools::install_github("stefanwilhelm/ShinyRatingInput")
+library(mapproj)
+install.packages(c("map","mapproj"))
+```
+
