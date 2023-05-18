@@ -1,0 +1,44 @@
+---
+title: "Test.error"
+author: "Tian Ni"
+date: "10/18/2021"
+output: html_document
+---
+
+```{r }
+test.y=read.csv("test10_y.csv")
+pred <- read.csv("mysubmission2.txt")
+names(test.y)[2] <- "True_Sale_Price"
+pred <- merge(pred, test.y, by="PID")
+sqrt(mean((log(pred$Sale_Price) - log(pred$True_Sale_Price))^2))
+#4 0.1204003 0.116853
+#3 0.1217998 0.1149293
+#2 0.1196406 0.1177595
+#1 0.1228109 0.114669
+#5 0.1118636 0.1117804
+#6 0.1332633 0.1281007
+#7 0.1265432 0.1328459
+#8 0.1211565 0.1265862
+#9 0.1298632 0.1282488
+#10 0.1235264 0.1275834
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

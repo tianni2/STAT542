@@ -1,0 +1,211 @@
+library(xgboost)
+library(glmnet)
+
+#Step 1: Preprocess training data and fit two models.
+
+# read train data
+train=read.csv("train.csv",stringsAsFactors = FALSE)
+
+# make train.x be the train data without "PID" and "Sale_Price"
+train.x=train[,-c(1,83)]
+
+# check the range of the response to make a log transformation
+train.y=log(train[,83])
+
+## The following code of detect missing value and impute missing value is 
+## based on the fact that we already know that only variable "Garage_Yr_Blt" 
+## has missing values and decide to impute those missing values with 0
+
+
+# see whether there is missing data in the train data
+
+# construct the function to capture the variables which has missing values
+missing.n=sapply(names(train),
+                 function(x)
+                   length(which(is.na(train[,x]))))
+# get the variable name
+id=which(is.na(train$Garage_Yr_Blt))
+
+# impute those missing data by 0
+train.x$Garage_Yr_Blt[id]=0
+
+# First, look through the variable description and 
+# remove some unnecessary variables
+remove.var=c("Street","Utilities","Condition_2","Roof_Matl","Heating","Pool_QC",
+             "Misc_Feature","Low_Qual_Fin_SF","Pool_Area","Longitude","Latitude")
+index=which(colnames(train.x) %in% remove.var)
+train.x=train.x[,-index]
+
+# Remove extremely imbalanced categorical variables with most samples belonging 
+# to one category
+## Do not know how to perform this step b/c looking at their distribution plot 
+## seems like too complicated and space-consuming for this project
+
+# Winsorization 
+# Apply winsorization on some numerical variables: compute the upper 95% 
+# quantile of that variable based on the train data, denoted by M;
+# then replace all values in the train (and also test) that are bigger than M by
+# M
+winsor.vars=c("Lot_Frontage","Lot_Area","Mas_Vnr_Area","BsmtFin_SF_2",
+              "Bsmt_Unf_SF","Total_Bsmt_SF","Second_Flr_SF","First_Flr_SF",
+              "Gr_Liv_Area","Garage_Area","Wood_Deck_SF","Open_Porch_SF",
+              "Enclosed_Porch","Three_season_porch","Screen_Porch","Misc_Val")
+quan.value=0.95
+for(var in winsor.vars){
+  tmp=train.x[,var]
+  myquan=quantile(tmp,probs=quan.value,na.rm=TRUE)
+  tmp[tmp>myquan]=myquan
+  train.x[,var]=tmp
+}
+
+# Then we need to transform the data to a numerical matrix 
+categorical.vars=colnames(train.x)[
+  which(sapply(train.x, function(x) mode(x)=="character")) ]
+train.matrix=train.x[, !colnames(train.x) %in% categorical.vars,
+                     drop=FALSE]
+n.train=nrow(train.matrix)
+for(var in categorical.vars){
+  mylevels=sort(unique(train.x[,var]))
+  m=length(mylevels)
+  m=ifelse(m>2, m, 1)
+  tmp.train=matrix(0,n.train,m)
+  col.names=NULL
+  for(j in 1:m){
+    tmp.train[train.x[,var]==mylevels[j],j]=1
+    col.names=c(col.names,paste(var, '-',mylevels[j],sep = ''))
+  }
+  colnames(tmp.train)=col.names
+  train.matrix=cbind(train.matrix,tmp.train)
+}
+
+# XGBoost regression
+set.seed(6659)
+xgb.model=xgboost(data = as.matrix(train.matrix),label=train.y,
+     max_depth=6, eta=0.05, nrounds=5000,
+     subsample=0.5, verbose = FALSE)
+
+# Elastic net with alpha=0.5
+set.seed(6659)
+cv.out=cv.glmnet(as.matrix(train.matrix),train.y,alpha=0.5)
+
+
+
+
+
+
+test.x=read.csv("test.csv",stringsAsFactors = FALSE)
+
+
+
+## The following code of detect missing value and impute missing value is 
+## based on the fact that we already know that only variable "Garage_Yr_Blt" 
+## has missing values and decide to impute those missing values with 0
+
+
+# see whether there is missing data in the test data
+
+# construct the function to capture the variables which has missing values
+missing.n=sapply(names(test),
+                 function(x)
+                   length(which(is.na(test[,x]))))
+# get the variable name
+id=which(is.na(test$Garage_Yr_Blt))
+
+
+# impute those missing data by 0
+test.x$Garage_Yr_Blt[id]=0
+
+# First, look through the variable description and remove 
+# some unnecessary variables
+remove.var=c("Street","Utilities","Condition_2","Roof_Matl",
+             "Heating","Pool_QC","Misc_Feature","Low_Qual_Fin_SF",
+             "Pool_Area","Longitude","Latitude")
+index=which(colnames(test.x) %in% remove.var)
+test.x=test.x[,-index]
+
+# Remove extremely imbalanced categorical variables with most samples belonging 
+# to one category
+## Do not know how to perform this step b/c looking at their distribution plot 
+## seems like too complicated and space-consuming for this project
+
+# Winsorization 
+# Apply winsorization on some numerical variables: compute the upper 95% 
+# quantile of that variable based on the test data, denoted by M;
+# then replace all values in the test (and also test) that are bigger than M by
+# M
+winsor.vars=c("Lot_Frontage","Lot_Area","Mas_Vnr_Area","BsmtFin_SF_2",
+              "Bsmt_Unf_SF","Total_Bsmt_SF","Second_Flr_SF","First_Flr_SF",
+              "Gr_Liv_Area","Garage_Area","Wood_Deck_SF","Open_Porch_SF",
+              "Enclosed_Porch","Three_season_porch","Screen_Porch","Misc_Val")
+quan.value=0.95
+for(var in winsor.vars){
+  tmp=test.x[,var]
+  myquan=quantile(tmp,probs=quan.value,na.rm=TRUE)
+  tmp[tmp>myquan]=myquan
+  test.x[,var]=tmp
+}
+
+# Then we need to transform the data to a numerical matrix 
+categorical.vars=colnames(test.x)[
+  which(sapply(test.x, function(x) mode(x)=="character")) ]
+test.matrix=test.x[, !colnames(test.x) %in% categorical.vars,
+                     drop=FALSE]
+n.test=nrow(test.matrix)
+for(var in categorical.vars){
+  mylevels=sort(unique(test.x[,var]))
+  m=length(mylevels)
+  m=ifelse(m>2, m, 1)
+  tmp.test=matrix(0,n.test,m)
+  col.names=NULL
+  for(j in 1:m){
+    tmp.test[test.x[,var]==mylevels[j],j]=1
+    col.names=c(col.names,paste(var, '-',mylevels[j],sep = ''))
+  }
+  colnames(tmp.test)=col.names
+  test.matrix=cbind(test.matrix,tmp.test)
+}
+
+# prune the test matrix to make all the variables have the same levels with 
+# the variables in the train matrix
+
+# First delete the levels of test.matrix which does not exist in train.matrix
+test.matrix=test.matrix[,colnames(test.matrix) %in% colnames(train.matrix)]
+
+# Get the variables name that needed to be added
+var.names=colnames(train.matrix)[!colnames(train.matrix) 
+                                 %in% colnames(test.matrix)]
+
+# Create the matrix and give the colnames 
+tmp.test=matrix(0,n.test,length(var.names))
+colnames(tmp.test)=var.names
+
+# combine the original test matrix with the added matrix 
+# which take 0 as its elements
+test.matrix=cbind(test.matrix,tmp.test)
+col.names=colnames(train.matrix)
+
+# Reorder the columns in the test matrix to make the column order match what we 
+# have in the train matrix to fit the regression model
+test.matrix=test.matrix[,c(col.names)]
+
+
+# Now we make prediction on the processed data through the XGBoost regression 
+# model and Elastic net model with alpha = 0.4
+
+elastic.pred=predict(cv.out,s=cv.out$lambda.min,newx=as.matrix(test.matrix))
+xgboost.pred=predict(xgb.model,as.matrix(test.matrix))
+
+
+
+
+#Write out the prediction value 
+
+PID=test.x$PID
+Sale_Price=exp(elastic.pred)
+elastic=cbind(PID,Sale_Price)
+write.csv(elastic,"mysubmission1.txt",row.names = FALSE,quote = FALSE, sep = ", ")
+
+Sale_Price=exp(xgboost.pred)
+boost=cbind(PID,Sale_Price)
+write.csv(boost,"mysubmission2.txt",row.names = FALSE,quote = FALSE, sep = ", ")
+

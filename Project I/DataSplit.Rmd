@@ -1,0 +1,25 @@
+---
+title: "Data Split for Project I of Stat 542"
+output: html_notebook
+---
+
+```{r}
+data=read.csv("Ames_data.csv")
+testIDs=read.table("project1_testIDs.dat")
+train_name=c("train1.csv","train2.csv","train3.csv","train4.csv","train5.csv","train6.csv","train7.csv","train8.csv","train9.csv","train10.csv")
+test_name=c("test1.csv","test2.csv","test3.csv","test4.csv","test5.csv","test6.csv","test7.csv","test8.csv","test9.csv","test10.csv")
+test_y_name=c("test1_y.csv","test2_y.csv","test3_y.csv","test4_y.csv","test5_y.csv","test6_y.csv","test7_y.csv","test8_y.csv","test9_y.csv","test10_y.csv")
+
+
+for(j in 1:10){
+  train=data[-testIDs[,j],]
+  test=data[testIDs[,j],]
+  test.y=test[,c(1,83)]
+  test=test[,-83]
+  write.csv(train,train_name[j],row.names = FALSE)
+  write.csv(test,test_name[j],row.names = FALSE)
+  write.csv(test.y,test_y_name[j],row.names = FALSE)
+}
+```
+
+
