@@ -1,0 +1,19 @@
+---
+title: "Project_III_evaluation"
+author: "Tian Ni"
+date: "12/2/2021"
+output: pdf_document
+---
+
+```{r}
+j = 5
+setwd(paste("split_", j, sep=""))
+library(pROC)
+source("mymain.R")
+# move test_y.tsv to this directory
+test.y <- read.table("test_y.tsv", header = TRUE)
+pred <- read.table("mysubmission.txt", header = TRUE)
+pred <- merge(pred, test.y, by="id")
+roc_obj <- roc(pred$sentiment, pred$prob)
+pROC::auc(roc_obj)
+```

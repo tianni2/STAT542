@@ -1,0 +1,97 @@
+---
+title: "STAT_542_Project_III"
+author: "Tian Ni"
+date: "12/1/2021"
+output:
+  html_document:
+    df_print: paged
+---
+```{r}
+library(text2vec)
+library(slam)
+library(glmnet)
+```
+
+```{r}
+j = 2
+setwd(paste("split_", j, sep=""))
+train = read.table("train.tsv",
+                   stringsAsFactors = FALSE,
+                   header = TRUE)
+test_x = read.table("test.tsv",
+                   stringsAsFactors = FALSE,
+                   header = TRUE)
+test_y=read.table("test_y.tsv",
+                   stringsAsFactors = FALSE,
+                   header = TRUE)
+test=cbind(test_x$id,test_y$sentiment,test_x$review)
+colnames(test)=c("id","sentiment","review")
+
+whole= rbind(train,test)
+whole$review = gsub('<.*?>', ' ', whole$review)
+
+
+stop_words = c("i", "me", "my", "myself", 
+               "we", "our", "ours", "ourselves", 
+               "you", "your", "yours", 
+               "their", "they", "his", "her", 
+               "she", "he", "a", "an", "and",
+               "is", "was", "are", "were", 
+               "him", "himself", "has", "have", 
+               "it", "its", "the", "us")
+it_whole = itoken(whole$review,
+                  preprocessor = tolower, 
+                  tokenizer = word_tokenizer)
+tmp.vocab = create_vocabulary(it_whole, 
+                              stopwords = stop_words, 
+                              ngram = c(1L,4L))
+tmp.vocab = prune_vocabulary(tmp.vocab, term_count_min = 10,
+                             doc_proportion_max = 0.5,
+                             doc_proportion_min = 0.001)
+dtm_whole  = create_dtm(it_whole, vocab_vectorizer(tmp.vocab))
+
+
+v.size = dim(dtm_whole)[2]
+ywhole = as.numeric(whole$sentiment)
+
+summ = matrix(0, nrow=v.size, ncol=4)
+summ[,1] = colapply_simple_triplet_matrix(
+  as.simple_triplet_matrix(dtm_whole[ywhole==1, ]), mean)
+summ[,2] = colapply_simple_triplet_matrix(
+  as.simple_triplet_matrix(dtm_whole[ywhole==1, ]), var)
+summ[,3] = colapply_simple_triplet_matrix(
+  as.simple_triplet_matrix(dtm_whole[ywhole==0, ]), mean)
+summ[,4] = colapply_simple_triplet_matrix(
+  as.simple_triplet_matrix(dtm_whole[ywhole==0, ]), var)
+
+n1 = sum(ywhole); 
+n = length(ywhole)
+n0 = n - n1
+
+myp = (summ[,1] - summ[,3])/sqrt(summ[,2]/n1 + summ[,4]/n0)
+
+
+words = colnames(dtm_whole)
+id = order(abs(myp), decreasing=TRUE)[1:2000]
+pos.list = words[id[myp[id]>0]]
+neg.list = words[id[myp[id]<0]]
+
+dtm_whole1=dtm_whole[,id]
+# use lasso to prune the 2k words to 980
+set.seed(542)
+
+tmpfit1 = glmnet(x = dtm_whole, 
+                y = whole$sentiment, 
+                alpha = 1,
+                family='binomial')
+
+tmpfit1$df
+
+myvocab = colnames(dtm_whole)[which(tmpfit1$beta[, 36] != 0)]
+length(myvocab)
+
+write.table(myvocab, file="myvocab.txt",sep = "",quote = FALSE, row.names = FALSE)
+
+
+```
+
