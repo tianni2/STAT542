@@ -1,0 +1,282 @@
+---
+title: "Assignment_2_6659_tianni2"
+author: "Tian Ni"
+date: "9/23/2021"
+output:
+  html_document:
+    df_print: paged
+---
+Part I.
+--
+
+First load the transformed Boston Housing Data
+```{r}
+myData=read.csv("Coding2_myData.csv",header = TRUE)
+X=as.matrix(myData[,-14])
+y=myData$Y
+dim(X)
+```
+
+Then we construct the one_var_lasso function which could be used to solve the Lasso estimate for $\beta_{j}$ given other coefficients fixed
+
+```{r}
+one_var_lasso=function(r,x,lam){
+  xx=sum(x^2)
+  xr=sum(r*x)
+  b=(abs(xr)-lam/2)/xx
+  b=sign(xr) * ifelse(b>0, b, 0)
+  return(b)
+}
+
+```
+
+Then we construct our MyLasso function which could implement CD and output estimated Lasso coefficients 
+```{r}
+MyLasso=function(X, y, lam.seq, maxit=100){
+  # X: n-by-p design matrix without the intercept
+  # y: n-by-1 response vector
+  # lam.seq: sequence of lambda values (arranged from large to small)
+  # maxit: number of updates for each lambda
+  # Center/Scale X
+  # Center y
+  
+  n=length(y)
+  p=dim(X)[2]
+  nlam=length(lam.seq)
+  
+  # Now we scale and center X and y
+  y.mean=mean(y)
+  X.mean=apply(X,2,mean)
+  X.sd=apply(X, 2, sd)
+  Xs=scale(X,center = X.mean, scale = X.sd)
+  
+  # Initialize coef vector b and residual vector r
+  b=rep(0,p)
+  r=y
+  B=matrix(nrow = nlam,ncol = p+1)
+  
+  # Triple nested loop
+  for (m in 1:nlam) {
+    lam=2*n*lam.seq[m]
+    for(step in 1: maxit){
+      for(j in 1:p){
+        r=r+(Xs[,j]*b[j])
+        b[j]=one_var_lasso(r,Xs[,j],lam)
+        r=r-(Xs[,j]*b[j])
+      }
+    }
+    B[m,]=c(0,b)
+  }
+  
+  # Now we update the intercepts stored in B[,1]
+  B[,1]=y.mean-(X.mean/X.sd) %*% t(B[,2:(p+1)])
+  
+  # Now we scale back the coefficients
+  B[,2:(p+1)]=scale(B[,2:(p+1)],center = FALSE,scale=X.sd)
+  
+  return(t(B))
+}
+```
+
+Now we test our algorithm 
+```{r}
+lam.seq=exp(seq(-1,-8,length.out=80))
+myout=MyLasso(X,y,lam.seq, maxit = 50)
+rownames(myout)=c("Intercept",colnames(X))
+dim(myout)
+
+```
+
+Now produce the path plot for the 12 non-intercept coefficients with the x-coordinate to be the lambda values in log-scale.
+
+```{r}
+
+x.index = log(lam.seq)
+beta=myout[-1,]
+matplot(x.index, t(beta), xlim=c(min(x.index),max(x.index)),
+        lty = 1, xlab="Log Lambda", ylab="Coefficients", type="l", lwd=1)
+
+# Add variable names to each path
+var.names=colnames(X)
+nvar=length(var.names)
+xpos=rep(min(x.index),nvar)
+ypos=beta[,ncol(beta)]
+text(xpos,ypos,var.names,cex=0.5,pos=2)
+
+```
+
+Check accuracy
+
+```{r}
+library(glmnet)
+lasso.fit=glmnet(X,y,alpha=1,lambda=lam.seq)
+max(abs(coef(lasso.fit)-myout))
+# We could see that the maximum difference between the two coefficient
+# matrices is less that 0.05.
+```
+
+
+Part II
+--
+
+```{r}
+library(pls)
+set.seed(6659)
+```
+
+Load the data
+
+```{r}
+myData=read.csv("BostonData2.csv")
+myData=myData[,-1]
+dim(myData)
+X=data.matrix(myData[,-1])
+Y=data.matrix(myData[,1])
+```
+
+Then we construct those seven procedure to make it easier to read 
+
+```{r}
+T=50
+n=length(Y)
+ntest=round(n*0.25)
+sample=sample(n,ntest)
+test=myData[sample,]
+train=myData[-sample,]
+```
+
+```{r}
+full=function(train,test){
+  full.model=lm(Y~.,data = train)
+  y.pred=predict(full.model,newdata=test)
+  MSPE=mean((test$Y-y.pred)^2)
+  return(MSPE)
+}
+```
+
+```{r}
+## For ridge regression, we need first find the correct range of lambda
+cv.out=cv.glmnet(X[-sample,],Y[-sample],alpha=0)
+best.lam=cv.out$lambda.min
+sum(cv.out$lambda<best.lam)
+plot(cv.out)
+# Try a lower lambda range to get the lowest MSPE
+mylasso.lambda.seq=exp(seq(-10,-2,length.out=100))
+cv.out=cv.glmnet(X[-sample,],Y[-sample],alpha=0,lambda = mylasso.lambda.seq) 
+plot(cv.out)   
+```
+
+Now we found the range of lambda, construct the ridge function
+
+```{r}
+ridge=function(xtrain,xtest,ytrain,ytest,lambda.list){
+  cv.out=cv.glmnet(xtrain,ytrain,alpha=0,lambda = lambda.list) 
+  best.lam=cv.out$lambda.min
+  Ytest.pred=predict(cv.out,s=best.lam,newx=xtest)
+  ridge.min=mean((ytest-Ytest.pred)^2)
+  best.lam=cv.out$lambda.1se
+  Ytest.pred=predict(cv.out,s=best.lam,newx=xtest)
+  ridge.1se=mean((ytest-Ytest.pred)^2)
+  
+  return(c(ridge.min,ridge.1se))
+}
+```
+
+Now we look at the lasso function
+
+```{r}
+lasso=function(xtrain,xtest,ytrain,ytest){
+  cv.out=cv.glmnet(xtrain,ytrain,alpha=1)
+  best.lam=cv.out$lambda.min
+  Ytest.pred=predict(cv.out,s=best.lam,newx=xtest)
+  lasso.min=mean((ytest-Ytest.pred)^2)
+  
+  best.lam=cv.out$lambda.1se
+  Ytest.pred=predict(cv.out,s=best.lam,newx=xtest)
+  lasso.1se=mean((ytest-Ytest.pred)^2)
+  
+  mylasso.coef=predict(cv.out,s=best.lam,type="coefficients")
+  var.sel=row.names(mylasso.coef)[which(mylasso.coef != 0)[-1]]
+  mylasso.refit=lm(Y~.,myData[-sample,c("Y",var.sel)])
+  Ytest.pred=predict(mylasso.refit,newdata=myData[sample,])
+  lasso.refit=mean((Ytest.pred-ytest)^2)
+  
+  return(c(lasso.min,lasso.1se,lasso.refit))
+}
+```
+
+Now we work on the PCR function
+
+```{r}
+myPCR=function(train,ytrain,test,ytest){
+  mypcr=pcr(Y~., data=train,validation="CV")
+  CVerr=RMSEP(mypcr)$val[1, ,]
+  adjCVerr=RMSEP(mypcr)$val[2, ,]
+  best.ncomp=which.min(CVerr)-1
+  if(best.ncomp==0){
+    Ytest.pred=mean(myData$Y[-sample])
+  }
+  else{
+    Ytest.pred=predict(mypcr,test,ncomp=best.ncomp)
+  }
+  pcr=mean((Ytest.pred-ytest)^2)
+  return(pcr)
+}
+```
+
+Run the simulation 50 times
+
+```{r}
+MSPE=matrix(rep(NA,350),50,7)
+for(t in 1:T){
+  sample=sample(n,ntest)
+  test=myData[sample,]
+  train=myData[-sample,]
+  MSPE[t,1]=full(train,test)
+  MSPE[t,2:3]=ridge(X[-sample,],X[sample,],Y[-sample,],Y[sample,],mylasso.lambda.seq)
+  MSPE[t,4:6]=lasso(X[-sample,],X[sample,],Y[-sample,],Y[sample,])
+  MSPE[t,7]=myPCR(train,train$Y,test,test$Y)
+}
+colnames(MSPE)=c("full","ridge.min","ridge.1se","lasso.min","lasso.1se","lasso.refit","pcr")
+boxplot(MSPE,col=c("orange",rep("blue",2),rep("purple",3),"darkgrey"))
+```
+
+From the boxplot we can see that, almost all the MSPEs produced by these seven procedures are under 0.05 except three "outliers" in full model and PCR method. Moreover, lasso's MSPEs are a little bit higher than MSPE of ridge averagely. In general, for both lasso and ridge, the "lambda.min" always gives smaller MSPE than "lambda.1se". The ridge with lambda.min gives the smallest MSPE and lasso with 1se lambda gives the greatest MSPE on average. 
+
+
+Try on another data
+--
+
+Load the newdata
+
+```{r}
+myData=read.csv("BostonData3.csv")
+myData=myData[,-1]
+dim(myData)
+X=data.matrix(myData[,-1])
+Y=data.matrix(myData[,1])
+MSPE.new=matrix(rep(NA,300),50,6)
+
+## For ridge regression, we need first find the correct range of lambda
+cv.out=cv.glmnet(X[-sample,],Y[-sample],alpha=0)
+best.lam=cv.out$lambda.min
+sum(cv.out$lambda<best.lam)
+plot(cv.out)
+# Try a lower lambda range to get the lowest MSPE
+mylasso.lambda.seq=exp(seq(-6,2,length.out=100))
+cv.out=cv.glmnet(X[-sample,],Y[-sample],alpha=0,lambda = mylasso.lambda.seq) 
+plot(cv.out) 
+
+for(t in 1:T){
+  sample=sample(n,ntest)
+  test=myData[sample,]
+  train=myData[-sample,]
+  MSPE.new[t,1:2]=ridge(X[-sample,],X[sample,],Y[-sample,],Y[sample,],mylasso.lambda.seq)
+  MSPE.new[t,3:5]=lasso(X[-sample,],X[sample,],Y[-sample,],Y[sample,])
+  MSPE.new[t,6]=myPCR(train,train$Y,test,test$Y)
+}
+colnames(MSPE.new)=c("ridge.min","ridge.1se","lasso.min","lasso.1se","lasso.refit","pcr")
+boxplot(MSPE.new,col=c(rep("blue",2),rep("purple",3),"darkgrey"))
+```
+
+From the boxplot we could obviously catch that, PCR method gives the greatest MSPE and ridge with lambda.1se gives the second largest MSPE. On average, MSPE of lasso is lower that the MSPE of ridge, which is exactly the converse of what we had in Boston 2.
